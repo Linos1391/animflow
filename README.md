@@ -1,0 +1,2 @@
+# animcli
+Animation on CLI
