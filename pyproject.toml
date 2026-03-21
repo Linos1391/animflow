@@ -1,0 +1,42 @@
+[project]
+name = "animflow"
+authors = [
+    { name="Linos1391", email="linos.coding@gmail.com" },
+]
+dynamic = ["version"]
+description = "Make animation unlike before."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "pillow>=12.1.1",
+    "pyqt6>=6.10.2",
+]
+classifiers=[
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3.14",
+    "Natural Language :: English",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Environment :: Console",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: Unix",
+]
+
+[project.urls]
+Repository = "https://github.com/Linos1391/animflow.git"
+Issues = "https://github.com/Linos1391/animflow/issues"
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.uv.workspace]
+members = [
+    ".",
+]
