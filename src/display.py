@@ -41,6 +41,7 @@ class Animation:
         if not self.name:
             self.name = filename.split(".")[0]
 
+        tmpdir = None
         if filename.endswith(".tar.xz") and os.path.exists(path): # Extracting if needed.
             tmpdir = tempfile.TemporaryDirectory()
             animation_path = os.path.join(tmpdir.name, self.name)
@@ -63,7 +64,7 @@ class Animation:
         self.attributes = json_data
         self.attributes.update(kwargs)
 
-        images: dict[dict] = {}
+        images: dict[str, dict] = {}
         for frame in images_data:
             if not all((isinstance(frame.get("index"), int),
                         frame.get("file"), frame.get("location"))):
@@ -82,7 +83,7 @@ class Animation:
                     raise OSError(f"Animation {self.name} isn't compatible.") from err
                 images.update({frame.get("file"): files})
                 del files
-        if filename.endswith(".tar.xz"):
+        if tmpdir and filename.endswith(".tar.xz"):
             tmpdir.cleanup()
 
 class Displayer():
@@ -105,7 +106,7 @@ class Displayer():
     ```
     """
     def __init__(self) -> None:
-        self.container = None
+        self.container: QWidget | None = None
         self._app = None
 
         self.animations: dict = {}
@@ -128,7 +129,7 @@ class Displayer():
             **kwargs
         }
 
-        def eval_node(node):
+        def eval_node(node) -> int | float:
             if isinstance(node, ast.BinOp):  # Binary operations
                 left = eval_node(node.left)
                 right = eval_node(node.right)
@@ -144,7 +145,7 @@ class Displayer():
                     return op_func(operand)
                 else:
                     raise TypeError(f"Unsupported unary operator: {type(node.op)}")
-            elif isinstance(node, ast.Constant):  # Numbers
+            elif isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):  # Numbers
                 return node.value
             else:
                 raise TypeError(f"Unsupported node type: {type(node).__name__}")
@@ -164,8 +165,8 @@ class Displayer():
         Returns:
             bool: Found animation and select successfully.
         """
-        if animation_name in self.animations:
-            animation: Animation = self.animations.get(animation_name)
+        animation: None | Animation = self.animations.get(animation_name)
+        if isinstance(animation, Animation):
             attributes = animation.attributes
             attributes.update(kwargs)
 
@@ -227,13 +228,14 @@ class Displayer():
                 label.adjustSize()
             except IndexError:
                 timer.stop()
-                self.container.close()
-                self.container.deleteLater()
-                self.container = None
-                app.quit()
+                if isinstance(self.container, kwargs.get("container", QWidget)):
+                    self.container.close() # pyright: ignore[reportOptionalMemberAccess]
+                    self.container.deleteLater() # pyright: ignore[reportOptionalMemberAccess]
+                    self.container = None
+                app.quit() # pyright: ignore[reportOptionalMemberAccess]
 
         if not self.animations:
-            return
+            return 1
         if self.selected not in self.animations:
             self.selected = tuple(self.animations.keys())[0]
         self.select_animation(kwargs.get("animation", self.selected))
@@ -245,10 +247,11 @@ class Displayer():
             app = QApplication([])
         self._app = app
         self.container = kwargs.get("container", QWidget)()
-        self.container.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
-        self.container.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        if not isinstance(self.container, QWidget):
+            return 1
+        self.container.setWindowFlag(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint, True)
         self.container.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.container.setGeometry(kwargs.get('geometry', app.primaryScreen().geometry()))
+        self.container.setGeometry(kwargs.get('geometry', app.primaryScreen().geometry())) # pyright: ignore[reportOptionalMemberAccess, reportAttributeAccessIssue]
 
         label = QLabel(self.container)
         animation: Animation = self.animations[self.selected]
@@ -267,7 +270,7 @@ class Displayer():
         return app.exec()
 
 if __name__ == "__main__":
-    anim = Animation("/home/linos1391/Downloads/animflow/test.tar.xz")
+    anim = Animation("/home/linos1391/Downloads/animflow/test.tar.xz", loop=True)
 
     displayer = Displayer()
     displayer.add_animation(anim)
