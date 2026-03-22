@@ -13,7 +13,7 @@ class Converter:
     def __init__(self) -> None:
         self.attributes: dict = {}
         self.images: list[Image.Image] = []
-        self.location: dict[int: tuple[str, str]] = {}
+        self.location: dict[int, tuple[str, str]] = {}
 
     # So many errors, so many frames. Maybe convert your video to gif via 3rd parties?
     #
@@ -101,6 +101,7 @@ class Converter:
             Generator[OSError | None]: Yield `FileExistsError` if error occurred, `None` if success.
         """
         name = name.split(".")[0]
+        tmpdir = None
         if archive:
             tmpdir = tempfile.TemporaryDirectory()
             animation_path: str = os.path.join(tmpdir.name, name)
@@ -161,7 +162,8 @@ class Converter:
                 tar.add(os.path.join(animation_path, f"{name}.json"), f"{name}.json")
                 for index in range(save_index+1):
                     tar.add(os.path.join(animation_path, f"{index}.webp"), f"{index}.webp")
-                tmpdir.cleanup()
+                if tmpdir:
+                    tmpdir.cleanup()
 
 if __name__ == "__main__":
     converter = Converter()
