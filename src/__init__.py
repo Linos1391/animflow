@@ -1,7 +1,8 @@
 """Init package."""
 
+from .animation import Animation
 from .convert import Converter
-from .display import Animation, Displayer
+from .display import Displayer
 
 __all__ = [
     "Animation",
@@ -9,4 +10,4 @@ __all__ = [
     "Displayer",
 ]
 
-__version__ = '0.1.2'
+__version__ = '0.1.3'
