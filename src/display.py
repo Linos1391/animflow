@@ -1,90 +1,37 @@
 """Displayer functions."""
 import warnings
-import json
-import os
 import ast
 import operator
-import tarfile
-import tempfile
 
-from PIL import Image, ImageSequence, ImageQt
 #pylint: disable=E0611:no-name-in-module
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import QLabel, QApplication, QWidget
 
-class Animation:
-    """The animation. See `Displayer` for more details.
+try:
+    from animation import Animation
+except ImportError:
+    from .animation import Animation
 
-    Args:
-        path (str): Path to file.
-        start (int, optional): Index where the animation start, can be negative.
-        loop (bool, optional): To loop the animation or not, default is not to.
+class QWidgetForWayland(QWidget):
+    """I use Wayland. I hate myself.
+
+    Wayland until I catch u mfs. Why GNOME fedora? Why? For security? Now secure ur house mfs.
+
+    ```
+    displayer = Displayer()
+    displayer.add_animation(anim)
+    displayer.display(container=QWidgetForWayland)
+    ```
     """
-    def __init__(self, path: str, **kwargs) -> None:
-        self.attributes: dict = {}
-        self.name: str = ""
-        self.images: list[ImageQt.ImageQt] = []
-        self.location: list[tuple[str, str]] = []
-
-        self.load(path, **kwargs)
-
-    def load(self, path: str, **kwargs) -> None:
-        """Check file's integrity. Can be used to add more frame.
-
-        Args:
-            path (str): Path to file.
-            start (int, optional): Index where the animation start, can be negative.
-            loop (bool, optional): To loop the animation or not, default is not to.
-        """
-        _, filename = os.path.split(path)
-        if not self.name:
-            self.name = filename.split(".")[0]
-
-        tmpdir = None
-        if filename.endswith(".tar.xz") and os.path.exists(path): # Extracting if needed.
-            tmpdir = tempfile.TemporaryDirectory()
-            animation_path = os.path.join(tmpdir.name, self.name)
-            os.makedirs(animation_path)
-            with tarfile.open(path, mode="r:xz") as tar:
-                tar.extractall(animation_path)
-            path = animation_path
-        elif not os.path.isdir(path):
-            raise OSError(f"Animation {self.name} isn't compatible.")
-
-        # Check it.
-        with open(os.path.join(path, f"{self.name}.json"), "r", encoding="utf-8") as f:
-            json_data: dict = json.load(f)
-            f.close()
-
-        try:
-            images_data: list = json_data.pop("images")
-        except KeyError as err:
-            raise OSError(f"Animation {self.name} isn't compatible.") from err
-        self.attributes = json_data
-        self.attributes.update(kwargs)
-
-        images: dict[str, dict] = {}
-        for frame in images_data:
-            if not all((isinstance(frame.get("index"), int),
-                        frame.get("file"), frame.get("location"))):
-                raise OSError(f"Animation {self.name} isn't compatible.")
-
-            self.location.append(frame.get("location"))
-            try:
-                self.images.append(ImageQt.ImageQt(
-                                                images[frame.get("file")].pop(frame.get("index"))))
-            except KeyError:
-                try:
-                    files = {k: v for k, v in enumerate(ImageSequence.all_frames(
-                                                Image.open(os.path.join(path, frame.get("file")))))}
-                    self.images.append(ImageQt.ImageQt(files.pop(frame.get("index"))))
-                except (FileNotFoundError, KeyError) as err:
-                    raise OSError(f"Animation {self.name} isn't compatible.") from err
-                images.update({frame.get("file"): files})
-                del files
-        if tmpdir and filename.endswith(".tar.xz"):
-            tmpdir.cleanup()
+    def __init__(self, parent: QWidget | None = None) -> None:
+        #pylint: disable=C0301:line-too-long
+        super().__init__(parent, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        app = QApplication.instance()
+        if app is None:
+            app = QApplication([])
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setGeometry(app.primaryScreen().geometry()) # pyright: ignore[reportOptionalMemberAccess, reportAttributeAccessIssue]
 
 class Displayer():
     """The displayer.
@@ -96,11 +43,15 @@ class Displayer():
     displayer = Displayer()
     displayer.add_animation(anim)
 
+    moving_label = QLabel()
+    moving_label.setText("This will be move")
+
     kwargs = {
         "delay" = 300, # Delay in 300ms.
-        "geometry" = QRect(100, 100, 300, 300), # A container with 300x300 at (100,100).
-        "animation" = "animation_name" # Start with animation `animation_name`.
-        "container" = CustomQWidget # A class object from QWidget.
+        "animation" = "animation_name", # Start with animation `animation_name`.
+        "auto_shutdown" = True, # Will shutdown itself when the program is done.
+        "container" = CustomQWidget, # A class object from QWidget.
+        "move_widget" = moving_label, # A class object with will be move instead of default window.
     }
     displayer.display(**kwargs)
     ```
@@ -207,13 +158,14 @@ class Displayer():
             self.select_animation(animation.name)
 
     def display(self, **kwargs) -> int:
-        """Doing its purpose.
+        """Doing its purpose. See `Displayer` for detail examples.
 
         Args:
             delay (float, optional): Delay for the next frame in ms.
-            geometry (PyQt6.QtCore.QRect, optional): Dimension. Default to be fullscreen.
             animation (str, optional): Select another starting animation.
+            auto_shutdown (bool, optional): Shutdown itself when animation is done. Default is True.
             container (QWidget, optional): Custom widget for container. (Must be class object)
+            move_widget (QWidget, optional): QWidget that will be move.
         """
         def _update():
             self.index += 1
@@ -222,17 +174,18 @@ class Displayer():
                 self.index = 0
             try:
                 x, y = animation.location[self.index]
-                label.move(self._safe_math_eval(x.format_map(animation.attributes)),
-                           self._safe_math_eval(y.format_map(animation.attributes)))
+                kwargs.get("move_widget", label).move(
+                                self._safe_math_eval(x.format_map(animation.attributes)),
+                                self._safe_math_eval(y.format_map(animation.attributes)))
                 label.setPixmap(QPixmap.fromImage(animation.images[self.index]))
                 label.adjustSize()
             except IndexError:
                 timer.stop()
-                if isinstance(self.container, kwargs.get("container", QWidget)):
+                if kwargs.get("auto_shutdown", True) and\
+                                isinstance(self.container, kwargs.get("container", QWidget)):
                     self.container.close() # pyright: ignore[reportOptionalMemberAccess]
                     self.container.deleteLater() # pyright: ignore[reportOptionalMemberAccess]
                     self.container = None
-                app.quit() # pyright: ignore[reportOptionalMemberAccess]
 
         if not self.animations:
             return 1
@@ -240,8 +193,6 @@ class Displayer():
             self.selected = tuple(self.animations.keys())[0]
         self.select_animation(kwargs.get("animation", self.selected))
 
-        # Wayland until I catch u mfs. Why GNOME fedora? Why? For security? Now secure ur house mfs.
-        # These below are likely mandatory. Just overwrite it manually if you wish to.
         app = QApplication.instance()
         if app is None:
             app = QApplication([])
@@ -249,9 +200,6 @@ class Displayer():
         self.container = kwargs.get("container", QWidget)()
         if not isinstance(self.container, QWidget):
             return 1
-        self.container.setWindowFlag(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint, True)
-        self.container.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.container.setGeometry(kwargs.get('geometry', app.primaryScreen().geometry())) # pyright: ignore[reportOptionalMemberAccess, reportAttributeAccessIssue]
 
         label = QLabel(self.container)
         animation: Animation = self.animations[self.selected]
@@ -270,8 +218,8 @@ class Displayer():
         return app.exec()
 
 if __name__ == "__main__":
-    anim = Animation("/home/linos1391/Downloads/animflow/test.tar.xz", loop=True)
+    anim = Animation("/home/linos1391/Downloads/animflow/test.tar.xz")
 
     displayer = Displayer()
     displayer.add_animation(anim)
-    displayer.display()
+    displayer.display(container=QWidgetForWayland)
