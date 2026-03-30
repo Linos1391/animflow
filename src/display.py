@@ -21,7 +21,7 @@ class QWidgetForWayland(QWidget):
     ```
     displayer = Displayer()
     displayer.add_animation(anim)
-    displayer.display(container=QWidgetForWayland)
+    displayer.display(container=QWidgetForWayland())
     ```
     """
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -50,7 +50,7 @@ class Displayer():
         "delay" = 300, # Delay in 300ms.
         "animation" = "animation_name", # Start with animation `animation_name`.
         "auto_shutdown" = True, # Will shutdown itself when the program is done.
-        "container" = CustomQWidget, # A class object from QWidget.
+        "container" = CustomQWidget(), # A class object from QWidget.
         "move_widget" = moving_label, # A class object with will be move instead of default window.
     }
     displayer.display(**kwargs)
@@ -164,7 +164,7 @@ class Displayer():
             delay (float, optional): Delay for the next frame in ms.
             animation (str, optional): Select another starting animation.
             auto_shutdown (bool, optional): Shutdown itself when animation is done. Default is True.
-            container (QWidget, optional): Custom widget for container. (Must be class object)
+            container (QWidget, optional): Custom widget for container.
             move_widget (QWidget, optional): QWidget that will be move.
         """
         def _update():
@@ -181,8 +181,7 @@ class Displayer():
                 label.adjustSize()
             except IndexError:
                 timer.stop()
-                if kwargs.get("auto_shutdown", True) and\
-                                isinstance(self.container, kwargs.get("container", QWidget)):
+                if kwargs.get("auto_shutdown", True) and isinstance(self.container, QWidget):
                     self.container.close() # pyright: ignore[reportOptionalMemberAccess]
                     self.container.deleteLater() # pyright: ignore[reportOptionalMemberAccess]
                     self.container = None
@@ -197,7 +196,7 @@ class Displayer():
         if app is None:
             app = QApplication([])
         self._app = app
-        self.container = kwargs.get("container", QWidget)()
+        self.container = kwargs.get("container", QWidget())
         if not isinstance(self.container, QWidget):
             return 1
 
@@ -220,6 +219,8 @@ class Displayer():
 if __name__ == "__main__":
     anim = Animation("/home/linos1391/Downloads/animflow/test.tar.xz")
 
+    _ = QApplication([])
+
     displayer = Displayer()
     displayer.add_animation(anim)
-    displayer.display(container=QWidgetForWayland)
+    displayer.display(container=QWidgetForWayland())
