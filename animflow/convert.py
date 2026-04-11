@@ -169,7 +169,7 @@ if __name__ == "__main__":
     converter = Converter()
     converter.add_map("/home/linos1391/Downloads/giphy.gif")
 
-    for result in converter.save_map("test", "/home/linos1391/Downloads/animflow", archive=True):
+    for result in converter.save_map("idle", "/home/linos1391/Downloads/animflow", archive=True):
         if isinstance(result, FileExistsError):
             if input(f"{result} exists. Overwrite? [y/N] ").lower() != "y":
                 break

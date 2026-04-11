@@ -31,10 +31,10 @@ requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [tool.hatch.version]
-path = "src/__init__.py"
+path = "animflow/__init__.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["animflow"]
 
 [tool.uv.workspace]
 members = [
