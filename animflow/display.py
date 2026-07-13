@@ -1,7 +1,5 @@
 """Displayer functions."""
 import warnings
-import ast
-import operator
 from typing import Any
 
 #pylint: disable=E0611:no-name-in-module
@@ -10,7 +8,7 @@ from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import QLabel, QApplication, QWidget
 from PyQt6.QtDBus import QDBusInterface, QDBusConnection, QDBusMessage, QDBusArgument
 
-from animflow import Animation
+from animflow import Animation, EvalUtils
 
 class QWidgetForWayland(QWidget):
     """I use Wayland. I hate myself. This is made to not installing any extensions.
@@ -38,22 +36,11 @@ class GBusForWayland(QDBusInterface):
                        interface = "org.gnome.Shell.Extensions.Windows"):
         super().__init__("org.gnome.Shell", path, interface, QDBusConnection.sessionBus())
 
-    @staticmethod
-    def _safe_json_eval(value):
-        """Parse DBus reply values safely.
-
-        The Wayland extension returns Python literal structures such as
-        list[dict] or dict. Only parse string values as Python literals;
-        if the value is not a literal, keep the original string unchanged.
-        """
-        if isinstance(value, str):
-            try:
-                return ast.literal_eval(value.replace('true', 'True')
-                                             .replace('false', 'False')
-                                             .replace('null', 'None'))
-            except (ValueError, SyntaxError):
-                return value
-        return value
+        # self-check if the extension is enabled.
+        try:
+            self._call_method("List")
+        except OSError as err:
+            raise FileNotFoundError("Window Calls extension is not found.") from err
 
     def _call_method(self, method_name: str, *args) -> Any:
         """Call GBus with various function"""
@@ -62,7 +49,7 @@ class GBusForWayland(QDBusInterface):
             raise OSError(f"Error: {reply.errorMessage()}")
 
         arguments = reply.arguments()
-        return self._safe_json_eval(arguments[0]) if arguments else None
+        return EvalUtils.safe_json_eval(arguments[0]) if arguments else None
 
     def get_id(self, qt_id: str) -> str:
         """Sometime it's different so we need to make sure."""
@@ -88,9 +75,10 @@ class Displayer():
     displayer.add_animation(anim)
 
     moving_label = QLabel()
-    moving_label.setText("This will be move")
+    moving_label.setText("This will be move instead")
 
     kwargs = {
+        "title" = "Never gonna give you up", # Window title, default is `animflow`/
         "delay" = 300, # Delay in 300ms.
         "animation" = "animation_name", # Start with animation `animation_name`.
         "auto_shutdown" = True, # Will shutdown itself when the program is done.
@@ -102,51 +90,13 @@ class Displayer():
     """
     def __init__(self) -> None:
         self._app = None
+        self.container: QWidget
         self.wayland_id: str = ""
 
         self.animations: dict = {}
         self.index: int = 0
         self.loop: bool = False
         self.selected: str = ""
-
-    @staticmethod
-    def _safe_math_eval(expr, **kwargs) -> int:
-        """I do not trust you guys. I will not trust you guys.
-        Add to `**kwargs` yourself and rethink the consequences.
-        """
-        operators = {
-            ast.Add: operator.add,
-            ast.Sub: operator.sub,
-            ast.Mult: operator.mul,
-            ast.Div: operator.truediv,
-            ast.Pow: operator.pow,
-            ast.USub: operator.neg,
-            **kwargs
-        }
-
-        def eval_node(node) -> int | float:
-            if isinstance(node, ast.BinOp):  # Binary operations
-                left = eval_node(node.left)
-                right = eval_node(node.right)
-                op_func = operators.get(type(node.op))
-                if op_func:
-                    return op_func(left, right)
-                else:
-                    raise TypeError(f"Unsupported operator: {type(node.op)}")
-            elif isinstance(node, ast.UnaryOp):  # Unary operations
-                operand = eval_node(node.operand)
-                op_func = operators.get(type(node.op))
-                if op_func:
-                    return op_func(operand)
-                else:
-                    raise TypeError(f"Unsupported unary operator: {type(node.op)}")
-            elif isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):  # Numbers
-                return node.value
-            else:
-                raise TypeError(f"Unsupported node type: {type(node).__name__}")
-
-        tree = ast.parse(expr, mode='eval')
-        return int(eval_node(tree.body))
 
     def select_animation(self, animation_name: str, start: int = 0, loop: bool = False) -> bool:
         """Select animation to display in real time.
@@ -207,7 +157,6 @@ class Displayer():
                       delay: float = 100,
                       animation_name: str = "",
                       auto_shutdown: bool = True,
-                      wayland_gbus: bool = False,
                       container: QWidget | None = None,
                       move_widget: QWidget | None = None) -> int:
         """Doing its purpose. See `Displayer` for detail examples.
@@ -220,11 +169,10 @@ class Displayer():
             delay (float, optional): Delay for the next frame in ms.
             animation_name (str, optional): Select another starting animation.
             auto_shutdown (bool, optional): Shutdown itself when animation is done. Default is True.
-            wayland_gbus (bool, optional): Utilize GBus to move in Wayland environment.
             container (QWidget | None, optional): Custom widget for container.
             move_widget (QWidget | None, optional): Different QWidget that will be move instead.
         """
-        def _update(gbus):
+        def _update(gbus: GBusForWayland | None):
             if move_widget is None:
                 return
             self.index += 1
@@ -234,24 +182,25 @@ class Displayer():
             try:
                 x, y = animation.location[self.index]
 
-                if wayland_gbus:
+                if gbus:
                     if move_widget and move_widget.windowTitle() == str(int(move_widget.winId())):
                         self.wayland_id = gbus.get_id(str(int(move_widget.winId())))
                         move_widget.setWindowTitle(title)
                     gbus.move(self.wayland_id,
-                              self._safe_math_eval(x.format_map(animation.attributes)),
-                              self._safe_math_eval(y.format_map(animation.attributes)))
+                              *EvalUtils.location_format(x, y, animation.attributes))
                 else:
-                    move_widget.move(self._safe_math_eval(x.format_map(animation.attributes)),
-                                     self._safe_math_eval(y.format_map(animation.attributes)))
+                    move_widget.move(*EvalUtils.location_format(x, y, animation.attributes))
 
                 label.setPixmap(QPixmap.fromImage(animation.images[self.index]))
                 move_widget.adjustSize()
             except IndexError:
                 timer.stop()
                 if auto_shutdown:
-                    label.close() # pyright: ignore[reportOptionalMemberAccess]
-                    label.deleteLater() # pyright: ignore[reportOptionalMemberAccess]
+                    label.close()
+                    label.deleteLater()
+                    if hasattr(self, "container") and self.container:
+                        self.container.close()
+                        self.container.deleteLater()
 
         if not self.animations:
             return 1
@@ -266,35 +215,54 @@ class Displayer():
 
         label = QLabel(flags=Qt.WindowType.FramelessWindowHint)
         label.show()
+        gbus = None
         if container and isinstance(container, QWidget):
+            self.container = container
             label.setParent(container)
+        elif QApplication.platformName().lower().startswith("wayland"): # Using wayland.
+            try:
+                gbus = GBusForWayland()
+            except FileNotFoundError:
+                gbus = None
+                warnings.warn("Detected using Wayland, it is recommended to install "
+                              "`Window Calls extension` for a more intuitive experience. "
+                              "Link: https://github.com/ickyicky/window-calls.")
+                self.container = QWidgetForWayland()
+                label.setParent(self.container)
+        if hasattr(self, "container"):
+            self.container.show()
 
         animation: Animation = self.animations[self.selected]
         x, y = animation.location[self.index]
 
         if not move_widget:
             move_widget = label
-        if wayland_gbus:
+        if gbus:
             move_widget.setWindowTitle(str(int(move_widget.winId())))
 
         label.setPixmap(QPixmap.fromImage(animation.images[self.index]))
         # Gbus wayland isn't updated yet. So we skip this here!
-        move_widget.move(self._safe_math_eval(x.format_map(animation.attributes)),
-                         self._safe_math_eval(y.format_map(animation.attributes)))
+        move_widget.move(*EvalUtils.location_format(x, y, animation.attributes))
         move_widget.adjustSize()
 
         timer = QTimer()
-        gbus = GBusForWayland()
         timer.timeout.connect(lambda gbus=gbus: _update(gbus))
         timer.start(100 if delay < 0 else int(delay))
 
         return app.exec()
 
 if __name__ == "__main__":
-    anim = Animation("/home/linos1391/Downloads/animflow/idle.tar.xz", loop=True)
+    from PyQt6.QtWidgets import QFileDialog #pylint:disable=E0611:no-name-in-module C0412:ungrouped-imports
 
     _ = QApplication([])
-
     displayer = Displayer()
-    displayer.add_animation(anim)
-    displayer.display(wayland_gbus=True)
+
+    file_paths, _ = QFileDialog.getOpenFileNames(caption="Select animations")
+    if not file_paths:
+        raise OSError("Please select files to display.")
+
+    for file_path in file_paths:
+        anim = Animation(file_path)
+        displayer.add_animation(anim)
+
+    displayer.display()

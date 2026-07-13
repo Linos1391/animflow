@@ -8,6 +8,7 @@ description = "Make animation unlike before."
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "imgcompare>=2.0.1",
     "pillow>=12.1.1",
     "pyqt6>=6.10.2",
 ]
