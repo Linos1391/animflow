@@ -251,8 +251,11 @@ class Displayer():
 
         return app.exec()
 
-if __name__ == "__main__":
-    from PyQt6.QtWidgets import QFileDialog #pylint:disable=E0611:no-name-in-module C0412:ungrouped-imports
+def main():
+    "Displaying"
+    #pylint:disable=C0412:ungrouped-imports C0415:import-outside-toplevel
+    from PyQt6.QtWidgets import QFileDialog
+    from pathlib import Path
 
     _ = QApplication([])
     displayer = Displayer()
@@ -262,7 +265,10 @@ if __name__ == "__main__":
         raise OSError("Please select files to display.")
 
     for file_path in file_paths:
-        anim = Animation(file_path)
+        anim = Animation(Path(file_path))
         displayer.add_animation(anim)
 
     displayer.display()
+
+if __name__ == "__main__":
+    main()
