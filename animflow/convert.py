@@ -2,10 +2,12 @@
 import json
 import tarfile
 import tempfile
+from pathlib import Path
 import os
 from collections.abc import Generator
 
 import imgcompare
+import cv2
 from PIL import Image, ImageSequence
 
 from animflow import EvalUtils, Constant
@@ -21,23 +23,6 @@ class Converter:
         #      "location": (str, str)},
         #     ...
         # ]
-
-    # So many errors, so many frames. Maybe convert your video to gif via 3rd parties?
-    #
-    # def _convert_video(self, path: str) -> bool:
-    #     """Convert video into native map data."""
-    #     file = cv2.VideoCapture(path) #pylint: disable=E1101:no-member
-
-    #     if file.isOpened():
-    #         while True:
-    #             ret, frame = file.read()
-    #             if not ret:
-    #                 break
-    #             self.images.append(Image.fromarray(frame).convert("RGB"))
-    #         file.release()
-    #         return True
-    #     else:
-    #         return False
 
     def reset(self):
         """For a brand new start."""
@@ -89,6 +74,25 @@ class Converter:
             raise IndexError(f"Index receive is {index} when the maximum index "
                              f"is {len(self.frames)}") from err
 
+    def _convert_video(self, path: str, ) -> list[Image.Image]:
+        """Convert video into native map data."""
+        #pylint: disable=E1101:no-member
+        file = cv2.VideoCapture(path)
+
+        frames: list[Image.Image]= []
+        while file.isOpened():
+            ret, frame = file.read()
+            if not ret:
+                break
+
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frames.append(Image.fromarray(frame))
+        file.release()
+
+        if frames:
+            return frames
+        else:
+            raise OSError("Unable to read file.")
 
     def _convert_image_or_sequences(self, path: str) -> list[Image.Image]:
         """Convert image or image sequences into native map data."""
@@ -115,7 +119,11 @@ class Converter:
         if index < -1:
             index += 1
 
-        frames = self._convert_image_or_sequences(path)
+        try:
+            frames = self._convert_image_or_sequences(path)
+        except OSError:
+            frames = self._convert_video(path)
+
         for frame in frames:
             if use_append:
                 self.frames.append({"image": frame})
@@ -133,7 +141,7 @@ class Converter:
         """
         self.frames.insert(index_to, self.frames.pop(index_from))
 
-    def save_map(self, name: str, parent_path: str = '', archive: bool = True, **kwargs)\
+    def save_map(self, name: str, parent_path: Path = Path.cwd(), archive: bool = True, **kwargs)\
             -> Generator[FileExistsError | None]:
         """Save the image map. Fuck memory and time management for compile time, we focus runtime.
 
@@ -150,24 +158,24 @@ class Converter:
 
         Args:
             name (str): Name of the animation.
-            parent_path (str): Path that lead to saved animation.
+            parent_path (Path | None): Path that lead to saved animation.
             archive (bool): To archive everything as `tar.xz`.
             **kwargs
 
         Yields:
             Generator[OSError | None]: Yield `FileExistsError` if error occurred, `None` if success.
         """
-        name = name.split(".")[0]
+        name, _ = os.path.splitext(name)
         tmpdir = None
         if archive:
             tmpdir = tempfile.TemporaryDirectory()
-            animation_path: str = os.path.join(tmpdir.name, name)
-            os.makedirs(parent_path, exist_ok=True)
-            os.makedirs(animation_path, exist_ok=True)
+            animation_path: Path = Path(tmpdir.name) / name
+            animation_path.mkdir(parents=True, exist_ok=True)
+            parent_path.mkdir(parents=True, exist_ok=True)
         else:
-            animation_path: str = os.path.join(parent_path, name)
+            animation_path: Path = parent_path / name
             try:
-                os.makedirs(animation_path)
+                animation_path.mkdir(parents=True, exist_ok=True)
             except OSError:
                 yield FileExistsError(animation_path)
 
@@ -205,7 +213,7 @@ class Converter:
             if len(images) > 1:
                 img_kwargs = {"save_all": True, "append_images": images[1:]}
             compressed_hashmap.update({size_tag: f"{save_index}.webp"})
-            images[0].save(os.path.join(animation_path, f"{save_index}.webp"),
+            images[0].save(animation_path / f"{save_index}.webp",
                            quality=90, **img_kwargs)
         del hashmap
 
@@ -219,26 +227,28 @@ class Converter:
 
         attributes: dict = self.attributes
         attributes.update({"images": data}, **kwargs)
-        with open(os.path.join(animation_path, Constant.JSON_FILE),
+        with open(animation_path / Constant.JSON_FILE,
                   mode="w", encoding="utf-8") as f:
             json.dump(attributes, f, indent=4)
             f.close()
 
         if archive:
-            tarpath: str = os.path.join(parent_path, f"{name}.tar.xz")
-            if os.path.exists(tarpath):
+            tarpath: Path = parent_path / f"{name}.tar.xz"
+            if tarpath.exists():
                 yield FileExistsError(tarpath)
 
             with tarfile.open((tarpath), "w:xz") as tar:
-                tar.add(os.path.join(animation_path, Constant.JSON_FILE), Constant.JSON_FILE)
+                tar.add(animation_path / Constant.JSON_FILE, Constant.JSON_FILE)
                 for index in range(len(compressed_hashmap)):
                     gif_name: str = Constant.GIF_FILE.format(index=index)
-                    tar.add(os.path.join(animation_path, gif_name), gif_name)
+                    tar.add(animation_path / gif_name, gif_name)
                 if tmpdir:
                     tmpdir.cleanup()
 
-if __name__ == "__main__":
-    from PyQt6.QtWidgets import QApplication, QFileDialog #pylint:disable=E0611:no-name-in-module
+def main(individually: bool = False):
+    """Converting"""
+    #pylint:disable=C0412:ungrouped-imports C0415:import-outside-toplevel E0611:no-name-in-module
+    from PyQt6.QtWidgets import QApplication, QFileDialog
 
     _ = QApplication([])
 
@@ -248,14 +258,29 @@ if __name__ == "__main__":
     if not file_paths:
         raise OSError("Please select files to convert.")
 
-    for file_path in file_paths:
-        converter.insert_map(file_path)
-
-    parent, filename = os.path.split(QFileDialog.getSaveFileName(caption="Save File As")[0])
-    if not (parent and filename):
+    save_path = QFileDialog.getSaveFileName(caption="Save File/Folder As")[0]
+    if not save_path:
         raise OSError("Please select a file name to save as.")
+    save_path = Path(save_path)
 
-    for result in converter.save_map(os.path.splitext(filename)[0], parent, archive=True):
-        if isinstance(result, FileExistsError):
-            if input(f"{result} exists. Overwrite? [y/N] ").lower() != "y":
-                break
+    if individually:
+        for file_path in file_paths:
+            converter.reset()
+            converter.insert_map(file_path)
+
+            for result in converter.save_map(Path(file_path).stem, save_path, archive=True):
+                if isinstance(result, FileExistsError):
+                    if input(f"{result} exists. Overwrite? [y/N] ").lower() != "y":
+                        break
+
+    else:
+        for file_path in file_paths:
+            converter.insert_map(file_path)
+
+        for result in converter.save_map(save_path.stem, save_path.parent, archive=True):
+            if isinstance(result, FileExistsError):
+                if input(f"{result} exists. Overwrite? [y/N] ").lower() != "y":
+                    break
+
+if __name__ == "__main__":
+    main(True)

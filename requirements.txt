@@ -1,3 +1,4 @@
 pillow
 imgcompare
+opencv-python
 pyqt6
