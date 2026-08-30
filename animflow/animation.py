@@ -24,6 +24,12 @@ class Animation:
 
         self.load(path, **kwargs)
 
+    def __str__(self) -> str:
+        return f"Animation(name='{self.name}', ...)"
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
     def load(self, path: Path, **kwargs) -> None:
         """Check file's integrity. Can be used to add more frame.
 
