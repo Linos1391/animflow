@@ -24,6 +24,12 @@ class Converter:
         #     ...
         # ]
 
+    def __str__(self) -> str:
+        return f"Converter(len(frames)={len(self.frames)}, ...)"
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
     def reset(self):
         """For a brand new start."""
         self.attributes = {}

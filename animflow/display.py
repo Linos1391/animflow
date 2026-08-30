@@ -98,6 +98,12 @@ class Displayer():
         self.loop: bool = False
         self.selected: str = ""
 
+    def __str__(self) -> str:
+        return f"Displayer(selected='{self.selected}', len(animations)={len(self.animations)}, ...)"
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
     def select_animation(self, animation_name: str, start: int = 0, loop: bool = False) -> bool:
         """Select animation to display in real time.
         Tips: Use debugger to find error if False returned.
