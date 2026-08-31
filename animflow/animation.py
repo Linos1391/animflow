@@ -41,7 +41,7 @@ class Animation:
         compatible_error_str: str = Constant.COMPATIBLE_ERROR.format(name=self.name)
 
         if not self.name:
-            self.name = path.stem
+            self.name = path.name.removesuffix(".tar.xz")
 
         tmpdir = None
         if path.name.endswith(".tar.xz") and path.exists(): # Extracting if needed.
