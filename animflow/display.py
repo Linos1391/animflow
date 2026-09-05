@@ -257,6 +257,10 @@ class Displayer():
 
         return app.exec()
 
+    def stop_display(self):
+        "Gracefully exit."
+        self.index = len(self.animations[self.selected].images) + 1
+
 def main():
     "Displaying"
     #pylint:disable=C0412:ungrouped-imports C0415:import-outside-toplevel
