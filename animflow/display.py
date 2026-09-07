@@ -91,18 +91,32 @@ class Displayer():
     def __init__(self) -> None:
         self._app = None
         self.container: QWidget
-        self.wayland_id: str = ""
+        self._wayland_id: str = ""
+        self._timer: QTimer | None = None
+        self._label: QLabel | None = None
 
         self.animations: dict = {}
         self.index: int = 0
         self.loop: bool = False
-        self.selected: str = ""
+        self._selected: str = ""
+        self._is_stopped: bool = True
 
     def __str__(self) -> str:
-        return f"Displayer(selected='{self.selected}', len(animations)={len(self.animations)}, ...)"
+        return (f"Displayer(selected='{self._selected}', "
+                          f"len(animations)={len(self.animations)}, ...)")
 
     def __repr__(self) -> str:
         return self.__str__()
+
+    @property
+    def selected(self):
+        """Selected animation"""
+        return self._selected
+
+    @property
+    def is_stopped(self):
+        """Whether the displayer stopped or not."""
+        return self._is_stopped
 
     def select_animation(self, animation_name: str, start: int = 0, loop: bool = False) -> bool:
         """Select animation to display in real time.
@@ -131,7 +145,7 @@ class Displayer():
             else:
                 self.loop: bool = animation.attributes.get("loop", False)
 
-            self.selected = animation_name
+            self._selected = animation_name
             return True
         return False
 
@@ -156,15 +170,20 @@ class Displayer():
                 else:
                     animation.name += f"_{order}"
         self.animations.update({animation.name: animation})
-        if self.selected not in self.animations:
+        if self._selected not in self.animations:
             self.select_animation(animation.name)
+
+    def show_animation(self):
+        """Show all currently added animations."""
+        return list(self.animations.keys())
 
     def display(self, title: str = "animflow",
                       delay: float = 100,
                       animation_name: str = "",
                       auto_shutdown: bool = True,
                       container: QWidget | None = None,
-                      move_widget: QWidget | None = None) -> int:
+                      move_widget: QWidget | None = None,
+                      run_event_loop: bool = True) -> int:
         """Doing its purpose. See `Displayer` for detail examples.
 
         Implement for Wayland: https://github.com/ickyicky/window-calls.
@@ -177,12 +196,30 @@ class Displayer():
             auto_shutdown (bool, optional): Shutdown itself when animation is done. Default is True.
             container (QWidget | None, optional): Custom widget for container.
             move_widget (QWidget | None, optional): Different QWidget that will be move instead.
+            run_event_loop (bool, optional): Whether to start Qt's event loop.
         """
+        def _stop_display():
+            timer.stop()
+            if auto_shutdown:
+                label.close()
+                label.deleteLater()
+                self._label = None
+                if hasattr(self, "container") and self.container:
+                    self.container.close()
+                    self.container.deleteLater()
+                if self._app is not None and run_event_loop:
+                    self._app.quit()
+                self._timer = None
+            self._is_stopped = True
+
         def _update(gbus: GBusForWayland | None):
+            if self._is_stopped:
+                _stop_display()
+                return
             if move_widget is None:
                 return
             self.index += 1
-            animation: Animation = self.animations[self.selected]
+            animation: Animation = self.animations[self._selected]
             if self.loop and self.index == len(animation.images):
                 self.index = 0
             try:
@@ -190,9 +227,9 @@ class Displayer():
 
                 if gbus:
                     if move_widget and move_widget.windowTitle() == str(int(move_widget.winId())):
-                        self.wayland_id = gbus.get_id(str(int(move_widget.winId())))
+                        self._wayland_id = gbus.get_id(str(int(move_widget.winId())))
                         move_widget.setWindowTitle(title)
-                    gbus.move(self.wayland_id,
+                    gbus.move(self._wayland_id,
                               *EvalUtils.location_format(x, y, animation.attributes))
                 else:
                     move_widget.move(*EvalUtils.location_format(x, y, animation.attributes))
@@ -200,19 +237,19 @@ class Displayer():
                 label.setPixmap(QPixmap.fromImage(animation.images[self.index]))
                 move_widget.adjustSize()
             except IndexError:
-                timer.stop()
-                if auto_shutdown:
-                    label.close()
-                    label.deleteLater()
-                    if hasattr(self, "container") and self.container:
-                        self.container.close()
-                        self.container.deleteLater()
+                _stop_display()
 
         if not self.animations:
             return 1
-        if self.selected not in self.animations:
-            self.selected = tuple(self.animations.keys())[0]
-        self.select_animation(animation_name if animation_name else self.selected)
+        if self._timer is not None:
+            self._timer.stop()
+        if self._label is not None:
+            self._label.close()
+            self._label.deleteLater()
+        if self._selected not in self.animations:
+            self._selected = tuple(self.animations.keys())[0]
+        self.select_animation(animation_name if animation_name else self._selected)
+        self._is_stopped = False
 
         app = QApplication.instance()
         if app is None:
@@ -220,6 +257,7 @@ class Displayer():
         self._app = app
 
         label = QLabel(flags=Qt.WindowType.FramelessWindowHint)
+        self._label = label
         label.show()
         gbus = None
         if container and isinstance(container, QWidget):
@@ -238,7 +276,7 @@ class Displayer():
         if hasattr(self, "container"):
             self.container.show()
 
-        animation: Animation = self.animations[self.selected]
+        animation: Animation = self.animations[self._selected]
         x, y = animation.location[self.index]
 
         if not move_widget:
@@ -252,20 +290,20 @@ class Displayer():
         move_widget.adjustSize()
 
         timer = QTimer()
+        self._timer = timer
         timer.timeout.connect(lambda gbus=gbus: _update(gbus))
         timer.start(100 if delay < 0 else int(delay))
 
-        return app.exec()
+        return app.exec() if run_event_loop else 0
 
     def stop_display(self):
         "Gracefully exit."
-        self.index = len(self.animations[self.selected].images) + 1
+        self._is_stopped = True
 
 def main():
     "Displaying"
     #pylint:disable=C0412:ungrouped-imports C0415:import-outside-toplevel
     from PyQt6.QtWidgets import QFileDialog
-    from pathlib import Path
 
     _ = QApplication([])
     displayer = Displayer()
@@ -275,7 +313,7 @@ def main():
         raise OSError("Please select files to display.")
 
     for file_path in file_paths:
-        anim = Animation(Path(file_path))
+        anim = Animation(file_path)
         displayer.add_animation(anim)
 
     displayer.display()
