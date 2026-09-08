@@ -78,12 +78,13 @@ class Displayer():
     moving_label.setText("This will be move instead")
 
     kwargs = {
-        "title" = "Never gonna give you up", # Window title, default is `animflow`/
+        "title" = "Never gonna give you up", # Window title, default is `animflow`
         "delay" = 300, # Delay in 300ms.
         "animation" = "animation_name", # Start with animation `animation_name`.
         "auto_shutdown" = True, # Will shutdown itself when the program is done.
         "container" = CustomQWidget(), # A class object from QWidget.
         "move_widget" = moving_label, # A class object with will be move instead of default window.
+        "run_event_loop" = True, # Run the Qt event loop, meaning it will block the main thread
     }
     displayer.display(**kwargs)
     ```
