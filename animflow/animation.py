@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import tarfile
+from typing import Generator
 import tempfile
 
 from PIL import Image, ImageSequence, ImageQt
@@ -16,13 +17,13 @@ class Animation:
         start (int, optional): Index where the animation start, can be negative.
         loop (bool, optional): To loop the animation or not, default is not to.
     """
-    def __init__(self, path: Path, **kwargs) -> None:
+    def __init__(self, path: str | Path, **kwargs) -> None:
         self.attributes: dict = {}
         self.name: str = ""
         self.images: list[ImageQt.ImageQt] = []
         self.location: list[tuple[str, str]] = []
 
-        self.load(path, **kwargs)
+        self.load_frame(path, **kwargs)
 
     def __str__(self) -> str:
         return f"Animation(name='{self.name}', ...)"
@@ -30,18 +31,19 @@ class Animation:
     def __repr__(self) -> str:
         return self.__str__()
 
-    def load(self, path: Path, **kwargs) -> None:
+    def load_frame(self, path: str | Path, **kwargs) -> None:
         """Check file's integrity. Can be used to add more frame.
 
         Args:
-            path (Path): Path to file.
+            path (str | Path): Path to file.
             start (int, optional): Index where the animation start, can be negative.
             loop (bool, optional): To loop the animation or not, default is not to.
         """
-        compatible_error_str: str = Constant.COMPATIBLE_ERROR.format(name=self.name)
+        path = Path(path)
 
         if not self.name:
             self.name = path.name.removesuffix(".tar.xz")
+        compatible_error_str: str = Constant.COMPATIBLE_ERROR.format(name=self.name)
 
         tmpdir = None
         if path.name.endswith(".tar.xz") and path.exists(): # Extracting if needed.
@@ -86,3 +88,13 @@ class Animation:
                 del files
         if tmpdir and path.name.endswith(".tar.xz"):
             tmpdir.cleanup()
+
+    @classmethod
+    def load_recur(cls, path: str | Path, **kwargs) -> Generator[Animation]:
+        """Load animations recursively through folder. Return generator of animations."""
+        for item in Path(path).iterdir():
+            try:
+                yield Animation(item, **kwargs)
+            except OSError:
+                if item.is_dir():
+                    yield from cls.load_recur(item, **kwargs)

@@ -274,7 +274,8 @@ def main(individually: bool = False):
             converter.reset()
             converter.insert_map(file_path)
 
-            for result in converter.save_map(Path(file_path).stem, save_path, archive=True):
+            for result in converter.save_map(Path(file_path).name.split(".")[0],
+                                             save_path, archive=True):
                 if isinstance(result, FileExistsError):
                     if input(f"{result} exists. Overwrite? [y/N] ").lower() != "y":
                         break
